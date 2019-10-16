@@ -30,7 +30,7 @@
 Npatch = 5; % number of patches
 s0 = [3; 2; 3; 1; 3]; % number of initial susceptible for each patch
 i0 = [0; 1; 0; 2; 0]; % number of initial infected for each patch
-rep = 2 * ones(Npatch,1);
+rep = 10 * ones(Npatch,1);
 f = [0, .0864, .0237, .004, .0001;
     .0864, 0, .0864, .0237, .004;
     .0237, .0864, 0, .0864, .0237;
@@ -53,7 +53,7 @@ n0 = s0+i0+r0; % total population (constant)
 num_rxns = Npatch * 2; % number of reactions (infection and recovery)
 
 gamma = 0.1; % 1/day, rate of I -> R
-cp = gamma * rep ./ (f *(s0./n0)) ; % contact rate * probability of infection
+cp = gamma * rep .* n0 ; % contact rate * probability of infection
 beta = repmat(cp,1,Npatch) .* (f ./ repmat(n0',Npatch,1)); % rate of S + I -> 2I
 
 steps = tf/tau; % number of steps
@@ -114,7 +114,7 @@ if ~isfile(['genMatrix_' num2str(Npatch) '.m'])
     
     fprintf(fid,'count=count+1;\n\n');
     for i = 1:Npatch*2
-        fprintf(fid,'end\n');        
+        fprintf(fid,'end\n');
     end
     fprintf(fid,['%% generate sparse matrix\n'...
         'minusTauA  = sparse(rows(nonZeroElements~=0),cols(nonZeroElements~=0),...\n'...
@@ -167,13 +167,20 @@ if ~isfile(['propensity_' num2str(Npatch) '.m'])
 end
 
 % create mapProbs file if it does not exist
+% I'm using a different lexicographic ordering of the probability vector
+% than that of the original script, which results in a backwards (or
+% forwards, I suppose) ordering of the for loops.
+% This code takes the K x 1 probability vector P and maps it to a (s0(i)+
+% 1) x (s0(i)+i0(i)+1) matrix for each patch i, compiled into an Npatch x 1
+% cell. For each patch, the matrix represents the probabilities of being
+% in every possible (S,I) state. Columns represent probabilities of having
+% each possible number of I, rows represent each possible S. Numbering
+% obeys the MATLAB shift. For instance, the sum of the first column
+% represents the probability of having 0 infectives.
+
 if ~isfile(['mapProbs_' num2str(Npatch) '.m'])
     fid = fopen(['mapProbs_' num2str(Npatch) '.m'],'w');
-    fprintf(fid,'function [');
-    for i = 1:(Npatch-1)
-        fprintf(fid,['SIprobs' num2str(i) ',']);
-    end
-    fprintf(fid,['SIprobs' num2str(Npatch) '] = mapProbs_' num2str(Npatch) '(probVect,hyperCubeOrigin,hyperCubeExtent,s0,i0)\n\n']);
+    fprintf(fid,['function SIprobs = mapProbs_' num2str(Npatch) '(probVect,hyperCubeOrigin,hyperCubeExtent,s0,i0)\n\n']);
     for j = 1:Npatch
         fprintf(fid,['SIprobs' num2str(j) ' = zeros(s0(' num2str(j) ')+1,s0(' num2str(j) ')+i0(' num2str(j) ')+1);\n']);
     end
@@ -191,9 +198,13 @@ if ~isfile(['mapProbs_' num2str(Npatch) '.m'])
         end
         fprintf(fid,'count = 1;\n');
     end
+    fprintf(fid,'SIprobs = {');
+    for j = 1:Npatch-1
+        fprintf(fid,['SIprobs' num2str(j) ';']);
+    end
+    fprintf(fid,['SIprobs' num2str(Npatch) '};\n']);
     fclose(fid);
 end
-
 %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Solve system
@@ -204,11 +215,9 @@ genMatrix = str2func(['genMatrix_' num2str(Npatch)]);
 propensity = str2func(['propensity_' num2str(Npatch)]);
 mapProbs = str2func(['mapProbs_' num2str(Npatch)]);
 
-meanI_1 = zeros(steps,1);
-meanI_2 = meanI_1;
-meanI_3 = meanI_1;
-meanI_4 = meanI_1;
-meanI_5 = meanI_1;
+meanS = zeros(steps, Npatch);
+meanI = zeros(steps, Npatch);
+stdevS = zeros(steps, Npatch);
 
 % find implicit Euler matrix
 IminusTauA = genMatrix(beta,gamma,s0,i0,K,hyperCubeOrigin,hyperCubeExtent,num_rxns,tau,propensity);
@@ -219,19 +228,20 @@ for index = 1:steps
     pNext = IminusTauA\pPrev; % solves IminusTauA*pNext = pPrev for pNext
     pPrev = pNext;            % prepare for next time step
     % calculate mean S and I values
-    [SIprobs1,SIprobs2,SIprobs3,SIprobs4,SIprobs5] = mapProbs(pNext,hyperCubeOrigin,hyperCubeExtent,s0,i0);
-
+    SIprobs = mapProbs(pNext,hyperCubeOrigin,hyperCubeExtent,s0,i0);
     
-    meanI_1(index) = sum(SIprobs1,1)*(0:(s0(1)+i0(1)))';
-    meanI_2(index) = sum(SIprobs2,1)*(0:(s0(2)+i0(2)))';
-    meanI_3(index) = sum(SIprobs3,1)*(0:(s0(3)+i0(3)))';
-    meanI_4(index) = sum(SIprobs4,1)*(0:(s0(4)+i0(4)))';
-    meanI_5(index) = sum(SIprobs5,1)*(0:(s0(5)+i0(5)))';
-
+    for i = 1:Npatch
+        meanS(index,i) = (0:s0(i))*sum(SIprobs{i},2);
+        stdevS(index,i) = sqrt((((0:s0(i))-meanS(index,i)).^2)*sum(SIprobs{i},2));
+        meanI(index,i) = sum(SIprobs{i},1)*(0:(s0(i)+i0(i)))';
+    end
+    
     % stop simulation when epidemic has ended
-    if sum(SIprobs1(1:end,1)) > 0.9999 && sum(SIprobs2(1:end,1)) > 0.9999 && sum(SIprobs3(1:end,1)) > 0.9999 && sum(SIprobs4(1:end,1)) > 0.9999 ...
-             && sum(SIprobs5(1:end,1)) > 0.9999 %%&& sum(SIprobs6(1:end,1)) > 0.9999 && sum(SIprobs7(1:end,1)) > 0.9999 && sum(SIprobs8(1:end,1)) > 0.9999 && sum(SIprobs9(1:end,1)) > 0.9999 ...
-%             && sum(SIprobs10(1:end,1)) > 0.9999 
+    endcrit = 0;
+    for i = 1:Npatch
+        endcrit = endcrit + sum(SIprobs{i}(1:end,1));
+    end
+    if endcrit > 0.9999*Npatch
         endtime = index*tau;
         disp(['epidemic has ended after ' num2str(endtime) ' days']);
         break;
