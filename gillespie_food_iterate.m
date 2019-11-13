@@ -157,12 +157,20 @@ for iter = 1:num_iter
         
         %% Generate two random numbers and calculate timestep tau and reaction mu
         a0 = sum(a);
-        tau = -log(rand)/a0; %that is, (1/a0)*log(1/r(1));
+        tau = -log(rand)/a0; % that is, (1/a0)*log(1/r(1));
         mu = find(cumsum(a) >= rand*a0,1);
         rxn_no = ceil(mu/(Npatch*Npatch));
         [speciesB,speciesA] = ind2sub([Npatch,Npatch],mod(mu,Npatch*Npatch));
         
-        
+        % this shouldn't really be necessary
+        if a0 <= 0.0001
+            break;
+        end
+         
+        % this also should not be necessary
+        if speciesA == 0 | speciesB == 0
+            break;
+        end
         if rxn_count + 1 > max_rxns
             t = T(1:rxn_count);
             x = X(1:rxn_count,:,:);
