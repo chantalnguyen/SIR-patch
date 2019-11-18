@@ -1,11 +1,11 @@
-function [ t, x, rxnss, rxn_counts, XX ] = gillespie_food_iterate( Npatch, s0, i0, n0, cp, l, thetastar, num_iter, patch_width)
-%% Implementation of the Gillespie algorithm for N coupled population SIR-type model for trophallaxis
+function [ t, x, y, rxnss, rxnss_simple, rxn_counts, XX, YY ] = gillespie_food_infection_iterate( Npatch, s0, i0, sus0, inf0, n0, cp, p_inf, gamma, l, thetastar, num_iter, patch_width)
+%% Implementation of the Gillespie algorithm for N coupled population SIR-type model for trophallaxis with infection
 %  using dynamically updated coupling matrix determined by von Mises
 %  probability distribution with variance related to mean square
 %  displacement
 %
 %  Populations:
-%  S, I_25, I_50, I_75, I_100, R
+%  S, I_25, I_50, I_75, I_100
 %  S + I_50 -> I_25 + I_25
 %  S + I_75 -> I_25 + I_50
 %  S + I_100 -> I_25 + I_75
@@ -15,7 +15,7 @@ function [ t, x, rxnss, rxn_counts, XX ] = gillespie_food_iterate( Npatch, s0, i
 %  I_50 + I_75 -> I_75 + I_50
 %  I_50 + I_100 -> I_75 + I_75
 %  I_75 + I_100 -> I_100 + I_75
-%  Removed: I_50 -> R
+%  Inf -> R
 %
 %
 %   Usage:
@@ -32,13 +32,21 @@ function [ t, x, rxnss, rxn_counts, XX ] = gillespie_food_iterate( Npatch, s0, i
 %
 %       Npatch:         Number of patches.
 %
-%       s0:             Initial number susceptible (Npatch x 1 vector).
+%       s0:             Initial number hungry (Npatch x 1 vector).
 %
-%       i0:             Initial number infected (I_100) (Npatch x 1 vector).
+%       i0:             Initial number full (I_100) (Npatch x 1 vector).
+%
+%       sus0:           Initial number susceptible (Npatch x 1 vector);
+%
+%       inf0:           Initial number infected (Npatch x 1 vector).
 %
 %       n0:             Total population of each patch (Npatch x 1 vector).
 %
-%       cp:             Contact rate * probability of infection (Npatch x 1 vector).
+%       cp:             Contact rate * probability of trophallaxis (Npatch x 1 vector).
+%
+%       p_inf:          Probability of infection occurring from a trophallaxis interaction 
+%
+%       gamma:          Recovery rate from infection
 %
 %       l:              Step size
 %
@@ -59,7 +67,7 @@ function [ t, x, rxnss, rxn_counts, XX ] = gillespie_food_iterate( Npatch, s0, i
 %   Initially modified: 2019-10-23
 %% Initialize
 tspan = [0, 10000000];
-if nargin < 9
+if nargin < 12
     patch_width = 30; % width of each patch
 end
 [xcoord,ycoord] = meshgrid(patch_width/2:patch_width:sqrt(Npatch)*patch_width,patch_width/2:patch_width:sqrt(Npatch)*patch_width);
@@ -102,7 +110,9 @@ num_rxns = size(stoich_matrix, 1);
 
 t = cell(num_iter,1);
 x = cell(num_iter,1);
+y = cell(num_iter,1);
 XX = cell(num_iter,1);
+YY = cell(num_iter,1);
 rxnss = cell(num_iter,1);
 rxnss_simple = cell(num_iter,1);
 rxn_counts = zeros(num_iter,1);
@@ -114,9 +124,13 @@ for iter = 1:num_iter
     rxns = zeros(max_rxns,1);
     rxns_simple = zeros(max_rxns,1);
     
-    X = zeros(max_rxns,num_species,Npatch);
+    X = zeros(max_rxns,num_species,Npatch); % tracks fed bees
     X(1,1,:) = s0;
     X(1,5,:) = i0;
+    
+    Y = zeros(max_rxns,2,Npatch); % tracks infected bees
+    Y(1,1,:) = sus0;
+    Y(1,2,:) = inf0;
     
     f = eye(Npatch); % initial coupling matrix has only intra-patch interactions
 %     cp = gamma * rep .* n0 ; % contact rate * probability of infection
@@ -153,24 +167,35 @@ for iter = 1:num_iter
             end
         end
         a = reshape(permute(a,[2 1 3]),numel(a),1);
-        
+        gammas = zeros(Npatch,1);
+        for k = 1:Npatch
+            gammas(k) = gamma * Y(rxn_count,2,k);
+        end
+        a = vertcat(a,gammas);
         
         %% Generate two random numbers and calculate timestep tau and reaction mu
         a0 = sum(a);
         tau = -log(rand)/a0; % that is, (1/a0)*log(1/r(1));
         mu = find(cumsum(a) >= rand*a0,1);
         rxn_no = ceil(mu/(Npatch*Npatch));
-        [speciesB,speciesA] = ind2sub([Npatch,Npatch],mod(mu,Npatch*Npatch)); % this refers to the two patches that interacted
+        if rxn_no > num_rxns
+            speciesA = mu - Npatch*Npatch*num_rxns;
+        else % fix this because it gives possibilities of zeros?
+%             [speciesB,speciesA] = ind2sub([Npatch,Npatch],mod(mu-1,Npatch*Npatch)+1);
+              [speciesB,speciesA] = ind2sub([Npatch,Npatch,num_rxns],mu);
+
+        end
         
         % this shouldn't really be necessary
         if a0 <= 0.0001
             break;
         end
          
-        % this also should not be necessary
-        if speciesA == 0 | speciesB == 0
-            break;
-        end
+%         % this also should not be necessary
+%         if speciesA == 0 | speciesB == 0
+%             break;
+%         end
+        
         if rxn_count + 1 > max_rxns
             t = T(1:rxn_count);
             x = X(1:rxn_count,:,:);
@@ -184,12 +209,24 @@ for iter = 1:num_iter
         % Update time and carry out reaction mu
         T(rxn_count+1)   = T(rxn_count)   + tau;
         X(rxn_count+1,:,:) = X(rxn_count,:,:); % nothing happened for most of the patches
-        X(rxn_count+1,:,speciesA) = X(rxn_count,:,speciesA) + stoich_1(rxn_no,:); % reaction that occurred
-        X(rxn_count+1,:,speciesB) = X(rxn_count,:,speciesB) + stoich_2(rxn_no,:);
+        Y(rxn_count+1,:,:) = Y(rxn_count,:,:);
+        if rxn_no <= num_rxns
+            X(rxn_count+1,:,speciesA) = X(rxn_count,:,speciesA) + stoich_1(rxn_no,:); % reaction that occurred
+            X(rxn_count+1,:,speciesB) = X(rxn_count,:,speciesB) + stoich_2(rxn_no,:);
+            
+            % check if infection occurs
+            b = [p_inf * Y(rxn_count,1,speciesA) * Y(rxn_count,2,speciesB); p_inf * Y(rxn_count,1,speciesB) * Y(rxn_count,2,speciesA)];
+            mub = find(cumsum(b) >= rand*sum(b),1);
+            if mub == 1 % B infects A
+                Y(rxn_count+1,:,speciesA) = Y(rxn_count,:,speciesA) + [-1 1];
+            elseif mub == 2 % A infects B
+                Y(rxn_count+1,:,speciesB) = Y(rxn_count,:,speciesB) + [-1 1];
+            end
+        else
+            Y(rxn_count+1,:,speciesA) = Y(rxn_count,:,speciesA) + [0, -1];
+        end
         rxns(rxn_count+1) = mu;
         rxns_simple(rxn_count+1) = rxn_no;
-        
-        
         
         distkernel = @(x) vonMises(x * pi/(max(max(dists))),0,100*2/sqrt(pi*msd(T(rxn_count+1),l,c(-1*thetastar,thetastar)))) * pi/(max(max(dists))) ;
         f = distkernel(dists);
@@ -202,7 +239,9 @@ for iter = 1:num_iter
     
     t{iter} = T(1:rxn_count);
     x{iter} = sum(X(1:rxn_count,:,:),3);
+    y{iter} = sum(Y(1:rxn_count,:,:),3);
     XX{iter} = X(1:rxn_count,:,:);
+    YY{iter} = Y(1:rxn_count,:,:);
     rxnss{iter} = rxns(1:rxn_count);
     rxnss_simple{iter} = rxns_simple(1:rxn_count);
     rxn_counts(iter) = rxn_count;
