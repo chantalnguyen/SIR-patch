@@ -67,7 +67,7 @@ function [ t, x, y, rxnss, rxnss_simple, rxn_counts, XX, YY ] = gillespie_food_i
 %   Initially modified: 2019-10-23
 %% Initialize
 tspan = [0, 10000000];
-if nargin < 12
+if nargin < 13
     patch_width = 30; % width of each patch
 end
 [xcoord,ycoord] = meshgrid(patch_width/2:patch_width:sqrt(Npatch)*patch_width,patch_width/2:patch_width:sqrt(Npatch)*patch_width);
@@ -186,10 +186,10 @@ for iter = 1:num_iter
 
         end
         
-        % this shouldn't really be necessary
-        if a0 <= 0.0001
-            break;
-        end
+%         % this shouldn't really be necessary
+%         if a0 <= 0.0001
+%             break;
+%         end
          
 %         % this also should not be necessary
 %         if speciesA == 0 | speciesB == 0
