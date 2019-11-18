@@ -182,7 +182,7 @@ for iter = 1:num_iter
             speciesA = mu - Npatch*Npatch*num_rxns;
         else % fix this because it gives possibilities of zeros?
 %             [speciesB,speciesA] = ind2sub([Npatch,Npatch],mod(mu-1,Npatch*Npatch)+1);
-              [speciesB,speciesA] = ind2sub([Npatch,Npatch,num_rxns],mu);
+              [speciesB,speciesA,~] = ind2sub([Npatch,Npatch,num_rxns],mu);
 
         end
         
