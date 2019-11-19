@@ -44,7 +44,7 @@ function [ t, x, y, rxnss, rxnss_simple, rxn_counts, XX, YY ] = gillespie_food_i
 %
 %       cp:             Contact rate * probability of trophallaxis (Npatch x 1 vector).
 %
-%       p_inf:          Probability of infection occurring from a trophallaxis interaction 
+%       p_inf:          Probability of infection occurring from a trophallaxis interaction
 %
 %       gamma:          Recovery rate from infection
 %
@@ -118,6 +118,7 @@ rxnss_simple = cell(num_iter,1);
 rxn_counts = zeros(num_iter,1);
 
 for iter = 1:num_iter
+    iter
     rxn_count = 1;
     
     T = zeros(max_rxns, 1);
@@ -133,7 +134,7 @@ for iter = 1:num_iter
     Y(1,2,:) = inf0;
     
     f = eye(Npatch); % initial coupling matrix has only intra-patch interactions
-%     cp = gamma * rep .* n0 ; % contact rate * probability of infection
+    %     cp = gamma * rep .* n0 ; % contact rate * probability of infection
     
     T(1,:) = tspan(1);
     
@@ -152,6 +153,8 @@ for iter = 1:num_iter
     while T(rxn_count) < tspan(2) %|| sum(sum(X(rxn_count,:,:))) == 0
         %% Calculate reaction propensities
         beta = repmat(cp,1,Npatch) .* (f ./ repmat(n0',Npatch,1)); % rate of S + I -> 2I
+        beta(isnan(beta)) = 0;
+        beta(beta==Inf) = 0;
         a = zeros(Npatch, Npatch, num_rxns);
         for k = 1:Npatch
             for j = 1:Npatch
@@ -179,22 +182,13 @@ for iter = 1:num_iter
         mu = find(cumsum(a) >= rand*a0,1);
         rxn_no = ceil(mu/(Npatch*Npatch));
         if rxn_no > num_rxns
-            speciesA = mu - Npatch*Npatch*num_rxns;
+            patchA = mu - Npatch*Npatch*num_rxns;
         else % fix this because it gives possibilities of zeros?
-%             [speciesB,speciesA] = ind2sub([Npatch,Npatch],mod(mu-1,Npatch*Npatch)+1);
-              [speciesB,speciesA,~] = ind2sub([Npatch,Npatch,num_rxns],mu);
-
+            %             [patchB,patchA] = ind2sub([Npatch,Npatch],mod(mu-1,Npatch*Npatch)+1);
+            [patchB,patchA,~] = ind2sub([Npatch,Npatch,num_rxns],mu);
+            
         end
         
-%         % this shouldn't really be necessary
-%         if a0 <= 0.0001
-%             break;
-%         end
-         
-%         % this also should not be necessary
-%         if speciesA == 0 | speciesB == 0
-%             break;
-%         end
         
         if rxn_count + 1 > max_rxns
             t = T(1:rxn_count);
@@ -211,19 +205,24 @@ for iter = 1:num_iter
         X(rxn_count+1,:,:) = X(rxn_count,:,:); % nothing happened for most of the patches
         Y(rxn_count+1,:,:) = Y(rxn_count,:,:);
         if rxn_no <= num_rxns
-            X(rxn_count+1,:,speciesA) = X(rxn_count,:,speciesA) + stoich_1(rxn_no,:); % reaction that occurred
-            X(rxn_count+1,:,speciesB) = X(rxn_count,:,speciesB) + stoich_2(rxn_no,:);
+            X(rxn_count+1,:,patchA) = X(rxn_count,:,patchA);
+            X(rxn_count+1,:,patchB) = X(rxn_count,:,patchB);
+            X(rxn_count+1,:,patchA) = X(rxn_count+1,:,patchA) + stoich_1(rxn_no,:); % reaction that occurred
+            X(rxn_count+1,:,patchB) = X(rxn_count+1,:,patchB) + stoich_2(rxn_no,:);
             
             % check if infection occurs
-            b = [p_inf * Y(rxn_count,1,speciesA) * Y(rxn_count,2,speciesB); p_inf * Y(rxn_count,1,speciesB) * Y(rxn_count,2,speciesA)];
+            b = [p_inf * Y(rxn_count,1,patchA) * Y(rxn_count,2,patchB);
+                p_inf * Y(rxn_count,1,patchB) * Y(rxn_count,2,patchA);
+                (1-p_inf)* Y(rxn_count,1,patchA) * Y(rxn_count,2,patchB);
+                (1-p_inf)* Y(rxn_count,1,patchB) * Y(rxn_count,2,patchA)];
             mub = find(cumsum(b) >= rand*sum(b),1);
             if mub == 1 % B infects A
-                Y(rxn_count+1,:,speciesA) = Y(rxn_count,:,speciesA) + [-1 1];
+                Y(rxn_count+1,:,patchA) = Y(rxn_count,:,patchA) + [-1 1];
             elseif mub == 2 % A infects B
-                Y(rxn_count+1,:,speciesB) = Y(rxn_count,:,speciesB) + [-1 1];
+                Y(rxn_count+1,:,patchB) = Y(rxn_count,:,patchB) + [-1 1];
             end
         else
-            Y(rxn_count+1,:,speciesA) = Y(rxn_count,:,speciesA) + [0, -1];
+            Y(rxn_count+1,:,patchA) = Y(rxn_count,:,patchA) + [0, -1];
         end
         rxns(rxn_count+1) = mu;
         rxns_simple(rxn_count+1) = rxn_no;

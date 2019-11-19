@@ -233,8 +233,10 @@ for iter = 1:num_iter
         X(rxn_count+1,:,:,:) = X(rxn_count,:,:,:); % nothing happened for most of the patches
         Y(rxn_count+1,:,:,:) = Y(rxn_count,:,:,:);
         if rxn_no <= num_rxns
-            X(rxn_count+1,:,groupA,patchA) = X(rxn_count,:,groupA,patchA) + stoich_1(rxn_no,:); % reaction that occurred
-            X(rxn_count+1,:,groupB,patchB) = X(rxn_count,:,groupB,patchB) + stoich_2(rxn_no,:);
+            X(rxn_count+1,:,groupA,patchA) = X(rxn_count,:,groupA,patchA);
+            X(rxn_count+1,:,groupB,patchB) = X(rxn_count,:,groupB,patchB);
+            X(rxn_count+1,:,groupA,patchA) = X(rxn_count+1,:,groupA,patchA) + stoich_1(rxn_no,:); % reaction that occurred
+            X(rxn_count+1,:,groupB,patchB) = X(rxn_count+1,:,groupB,patchB) + stoich_2(rxn_no,:);
             
             % check if infection occurs
             b = [p_inf(groupA) * Y(rxn_count,1,groupA,patchA) * Y(rxn_count,2,groupB,patchB);

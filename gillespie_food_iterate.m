@@ -160,7 +160,7 @@ for iter = 1:num_iter
         tau = -log(rand)/a0; % that is, (1/a0)*log(1/r(1));
         mu = find(cumsum(a) >= rand*a0,1);
         rxn_no = ceil(mu/(Npatch*Npatch));
-        [speciesB,speciesA] = ind2sub([Npatch,Npatch],mod(mu,Npatch*Npatch)); % this refers to the two patches that interacted
+        [patchB,patchA] = ind2sub([Npatch,Npatch],mod(mu,Npatch*Npatch)); % this refers to the two patches that interacted
         
         % this shouldn't really be necessary
         if a0 <= 0.0001
@@ -168,7 +168,7 @@ for iter = 1:num_iter
         end
          
         % this also should not be necessary
-        if speciesA == 0 | speciesB == 0
+        if patchA == 0 | patchB == 0
             break;
         end
         if rxn_count + 1 > max_rxns
@@ -184,8 +184,10 @@ for iter = 1:num_iter
         % Update time and carry out reaction mu
         T(rxn_count+1)   = T(rxn_count)   + tau;
         X(rxn_count+1,:,:) = X(rxn_count,:,:); % nothing happened for most of the patches
-        X(rxn_count+1,:,speciesA) = X(rxn_count,:,speciesA) + stoich_1(rxn_no,:); % reaction that occurred
-        X(rxn_count+1,:,speciesB) = X(rxn_count,:,speciesB) + stoich_2(rxn_no,:);
+        X(rxn_count+1,:,patchA) = X(rxn_count,:,patchA);
+        X(rxn_count+1,:,patchB) = X(rxn_count,:,patchB);
+        X(rxn_count+1,:,patchA) = X(rxn_count+1,:,patchA) + stoich_1(rxn_no,:); % reaction that occurred
+        X(rxn_count+1,:,patchB) = X(rxn_count+1,:,patchB) + stoich_2(rxn_no,:);
         rxns(rxn_count+1) = mu;
         rxns_simple(rxn_count+1) = rxn_no;
         
